@@ -2,7 +2,7 @@
 
 Code for my M.Sc. thesis (University of Stuttgart, Institute for Artificial Intelligence, 2025; first examiner Jun.-Prof. Dr.-Ing. Alina Roitberg). The repository extends [PySlowFast](https://github.com/facebookresearch/SlowFast) with structured pruning, knowledge distillation (KD) and model-efficiency measurements, and evaluates them on the egocentric [MECCANO](https://github.com/fpv-iplab/MECCANO) dataset (61 fine-grained action classes).
 
-The core idea is published in a shorter form as **PDNet** (VISAPP 2026): [github.com/mscmalekbaba/PDNet](https://github.com/mscmalekbaba/PDNet). This repository contains the full thesis code and the additional experiments that are not in the paper: a comparison of five baseline architectures, local vs. global vs. isomorphic pruning, a pruning-ratio sweep, a KD loss-weight sweep and a per-class analysis.
+The core idea is published in a shorter form as **PDNet** (VISAPP 2026): [github.com/mscmalekbaba/PDNet](https://github.com/mscmalekbaba/PDNet).
 
 ## Main result
 
