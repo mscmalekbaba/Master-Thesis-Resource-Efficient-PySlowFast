@@ -1,216 +1,104 @@
-# Resource-efficient Deep Learning Framework for Industrial Activity Recognition
+# Resource-efficient Deep Learning for Real-time Recognition of Worker Activities in Industrial Assembly
 
-This repository is part of a Master's thesis titled "Resource-efficient Deep Learning for Real-time Recognition of Worker Activities During Industrial Assembly". The project extends the PySlowFast framework with advanced capabilities for efficient deep learning in industrial settings.
+Code for my M.Sc. thesis (University of Stuttgart, Institute for Artificial Intelligence, 2025; first examiner Jun.-Prof. Dr.-Ing. Alina Roitberg). The repository extends [PySlowFast](https://github.com/facebookresearch/SlowFast) with structured pruning, knowledge distillation (KD) and model-efficiency measurements, and evaluates them on the egocentric [MECCANO](https://github.com/fpv-iplab/MECCANO) dataset (61 fine-grained action classes).
 
-## Table of Contents
+The core idea is published in a shorter form as **PDNet** (VISAPP 2026): [github.com/mscmalekbaba/PDNet](https://github.com/mscmalekbaba/PDNet). This repository contains the full thesis code and the additional experiments that are not in the paper: a comparison of five baseline architectures, local vs. global vs. isomorphic pruning, a pruning-ratio sweep, a KD loss-weight sweep and a per-class analysis.
 
-- [About The Project](#about-the-project)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Training](#training)
-  - [Testing](#testing)
-  - [Demo](#demo)
-  - [Benchmarking](#benchmarking)
-  - [Model Optimization](#model-optimization)
-  - [Pruning](#pruning)
-  - [Knowledge Distillation](#knowledge-distillation)
-  - [End-to-End Pipeline](#end-to-end-pipeline)
-- [TODO](#TODO)
-- [Acknowledgements](#Acknowledgements)
+## Main result
 
-## About The Project
+Isomorphic structured pruning (L1 criterion, 25% of channels) shrinks X3D-M from 3.09M to 1.80M parameters. Distillation from SlowFast then recovers most of the accuracy lost to pruning.
 
-This repository extends the original [PySlowFast](https://github.com/facebookresearch/SlowFast) framework (By forking it first!), with comprehensive additions focused on resource-efficient deep learning for industrial applications. Key enhancements include:
+| Model (MECCANO test set) | Top-1 (%) | Top-5 (%) | Size (MB) | GFLOPs |
+| --- | --- | --- | --- | --- |
+| SlowFast R50 (teacher, dataset authors' model) | 45.16 | 73.75 | 128.88 | 66.06 |
+| X3D-M (baseline) | 35.40 | 61.23 | 11.82 | 6.2 |
+| X3D-M, pruned only | 25.54 | 58.64 | 6.90 | 3.78 |
+| **X3D-M, pruned + KD** | **39.46** | **68.72** | **6.90** | **3.78** |
 
-- Model compression through structured pruning
-- Knowledge distillation capabilities
-- Resource-efficient inference benchmarking 
-- Integration with the MECCANO dataset for industrial assembly tasks
+*Size = number of parameters x 4 bytes (fp32 weights): 3.09M parameters for X3D-M, 1.80M after pruning. Checkpoint files on disk can be larger because they store more than the weights.*
 
-The framework is designed to strike a balance between high accuracy and computational efficiency, making it suitable for real-world industrial deployments.
+**CPU inference** on a 2-minute test video (Intel i5-1035G1, no GPU): SlowFast 75 s, X3D-M 44.8 s, pruned + KD 36.2 s, about 3x faster than real time.
 
-## MECCANO Dataset Overview
+**Limitations.** Each setting was trained once (no seeds or confidence intervals). MECCANO is long-tailed: mean per-class accuracy is 12.01% for X3D-M and 10.95% for pruned + KD, so most of the Top-1 accuracy comes from a few frequent classes.
 
-The [MECCANO dataset](https://github.com/fpv-iplab/MECCANO) is the first egocentric video dataset focused on human-object interactions in industrial-like scenarios. It features:
+## Method
 
-- **Multimodal data**: RGB, depth, and gaze signals
-- **Annotations**: Temporal (action segments) and spatial (object bounding boxes)
-- **Tasks**: Action Recognition, Active Object Detection, Egocentric Human-Object Interaction (EHOI) Detection, and more
-- **Classes**: 12 verbs, 20 objects, 61 unique actions
-- **Acquisition**: 20 subjects, 2 countries, 1920x1080@12fps, over 8,800 video segments and 64,000+ bounding box annotations[^8][^11][^14]
+```
+train baseline  ->  structured pruning  ->  fine-tune with KD  ->  measure params / FLOPs / CPU time
+ (X3D-M)           (Torch-Pruning,          (SlowFast teacher,
+                    isomorphic, L1, 25%)     alpha = 0.5, T = 4)
+```
 
+| Stage | Entry point | Config |
+| --- | --- | --- |
+| Train / test a model | `slowfast/tools/run_net.py` | `slowfast/configs/meccano/X3D_M.yaml` (also `SLOWFAST_8x8_R50`, `I3D_8x8_R50`, `X3D_L`, `3DMobileNet`) |
+| Prune | `slowfast/tools/prune_net.py` | `slowfast/configs/meccano/pruning/X3D_M_Pruned.yaml` |
+| Distill | `slowfast/tools/distill_net.py` | `slowfast/configs/meccano/distillation/SlowFast_to_X3D_M_v4.yaml` (final pruned + KD setup: alpha 0.5, T 4, batch 12, 180 epochs) |
+| Params / FLOPs / CPU time | `slowfast/tools/calculate.matrices.py` | any of the above |
+
+The other `SlowFast_to_X3D_M*.yaml` files are the alpha sweep (alpha = 1.0, 0.9, 0.5). `slowfast/tools/pipeline.py` is an unfinished stub for chaining the stages; for now, run them one after another.
 
 ## Installation
 
-### Requirements
-
-- Python == 3.12
-- GCC >= 4.9
-- All dependencies listed in `requirements.txt`
-
-Additionally, you must build **Detectron2** and **PyTorchVideo** from source.
-
-### Install Dependencies
-
-Install the core dependencies:
+Requirements: Python 3.12, GCC >= 4.9, and the packages in `requirements.txt`. Detectron2 and PyTorchVideo must be built from source.
 
 ```bash
 pip install -r requirements.txt
-```
 
-Build required components from source:
-
-```bash
-# Install Detectron2
 git clone https://github.com/facebookresearch/detectron2 detectron2_repo
 pip install -e detectron2_repo
 
-# Install PyTorchVideo
 git clone https://github.com/facebookresearch/pytorchvideo.git pyTorchVideo_repo
 pip install -e pyTorchVideo_repo
 ```
 
-
----
-
 ## Usage
 
-### Configuration
+The MECCANO dataset is not included; request access from the [dataset authors](https://github.com/fpv-iplab/MECCANO). The config files still contain absolute paths from my machine (`DATA.PATH_TO_DATA_DIR`, checkpoint and output directories). Override them on the command line or edit them before running.
 
-1. Example configuration file (`configs/MECCANO/SLOWFAST_8x8_R50.yaml`):
-```yaml
-MODEL:
-  NUM_CLASSES: 61
-  ARCH: slowfast
-  MODEL_NAME: SlowFast
-  LOSS_FUNC: cross_entropy
-  DROPOUT_RATE: 0.5
-SLOWFAST:
-  ALPHA: 8
-  BETA_INV: 8
-  FUSION_CONV_CHANNEL_RATIO: 2
-  FUSION_KERNEL_SZ: 7
-TRAIN:
-  BATCH_SIZE: 16
-  EVAL_PERIOD: 10
-  CHECKPOINT_PERIOD: 1
-  AUTO_RESUME: True
-DATA:
-  NUM_FRAMES: 32
-  SAMPLING_RATE: 2
-  TRAIN_JITTER_SCALES: [256, 320]
-  TRAIN_CROP_SIZE: 224
-  TEST_CROP_SIZE: 256
-  INPUT_CHANNEL_NUM: [3, 3]
-SOLVER:
-  BASE_LR: 0.01
-  LR_POLICY: cosine
-  MAX_EPOCH: 196
-  MOMENTUM: 0.9
-  WEIGHT_DECAY: 1e-4
-  WARMUP_EPOCHS: 34.0
-  WARMUP_START_LR: 0.01
-  OPTIMIZING_METHOD: sgd
-```
-
-2. Set environment variables:
 ```bash
-export PYTHONPATH=/path/to/framework:$PYTHONPATH
+cd slowfast
+export PYTHONPATH=$(pwd):$PYTHONPATH
+
+# 1. Train the baseline
+python tools/run_net.py --cfg configs/meccano/X3D_M.yaml \
+  DATA.PATH_TO_DATA_DIR /path/to/meccano_rgb_frames OUTPUT_DIR /path/to/out/x3d_m
+
+# 2. Prune (set PRUNING.CHECKPOINT_FILE_PATH and OUTPUT_DIR in the config first)
+python tools/prune_net.py --cfg configs/meccano/pruning/X3D_M_Pruned.yaml
+
+# 3. Fine-tune the pruned model with KD
+#    (set DISTILLATION.TEACHER_CFG_FILE and DISTILLATION.STUDENT_CHECKPOINT in the config first;
+#     STUDENT_CHECKPOINT is the L1 isomorphic pruned model produced in step 2. The default path in
+#     the config comes from my local runs.)
+python tools/distill_net.py --cfg configs/meccano/distillation/SlowFast_to_X3D_M_v4.yaml
 ```
 
+## Configs and checkpoints
 
-### Training
+Final configs and trained checkpoints used for the thesis results: *[link to be added]*
 
-Start training:
-```bash
-python tools/run_net.py \
-  --cfg configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-  NUM_GPUS 1 \
-  TRAIN.BATCH_SIZE 8 \
-  SOLVER.BASE_LR 0.01 \
-  DATA.PATH_TO_DATA_DIR /path/to/meccano_dataset
-```
+| Model | Config | Checkpoint |
+| --- | --- | --- |
+| SlowFast R50 (teacher) | `SLOWFAST_8x8_R50_MECCANO.yaml` | `SLOWFAST_8x8_R50_RGB_MECCANO.pyth` |
+| X3D-M baseline | `X3D_M.yaml` | `x3d_baseline.pyth` |
+| X3D-M pruned + KD | `X3D_M_Pruned_KD.yaml` | `x3d_pruning_KD.pyth` |
 
-### Testing
+## Roadmap
 
-Evaluate a trained model:
-```bash
-python tools/run_net.py \
-  --cfg configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-    DATA.PATH_TO_DATA_DIR /path/to/meccano_dataset \
-    TRAIN.ENABLE False \
-    TEST.CHECKPOINT_FILE_PATH /path/to/checkpoint.pyth
-```
+- Dockerfile and a pinned environment
+- A working end-to-end pipeline script and smoke tests
+- Architecture diagram
+- Class-balanced training for the long-tailed classes
 
-### Demo
+## Citation
 
-Run inference on a video:
-```bash
-python tools/run_net.py \
-  --cfg configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-  ENABLE: True \
-  LABEL_FILE_PATH Path to json file providing class_name - id mapping. \
-  INPUT_VIDEO Path to input video file. \
-  OUTPUT_FILE  Path to output video file to write results to. \
-                Leave an empty string if you would like to display results to a window.
-
-```
-
-### Benchmarking
-
-Measure model performance:
-```bash
-python tools/benchmark.py \
-  --cfg configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-  --model_path /path/to/checkpoint.pyth
-```
-
-### Model Optimization
-
-#### Pruning
-```bash
-python tools/prune.py \
-  --cfg configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-  --model_path /path/to/checkpoint.pyth \
-  --prune_ratio 0.5 \
-  --method l1_structured
-```
-
-#### Knowledge Distillation
-```bash
-python tools/distill.py \
-  --teacher_cfg configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-  --student_cfg configs/MECCANO/MOBILE_8x8.yaml \
-  --teacher_model /path/to/teacher.pyth \
-  --temperature 4.0
-```
-
-### End-to-End Pipeline
-
-Run the complete optimization pipeline:
-```bash
-bash scripts/run_pipeline.sh \
-  --config configs/MECCANO/SLOWFAST_8x8_R50.yaml \
-  --data_dir /path/to/meccano_dataset \
-  --output_dir /path/to/output
-```
-
-## TODO:
-
-  1. Create a dockerfile
-  2. Complete the pipeline and test it
-  3. Slowly add testing coverage
-  4. Improve the readme.md file
-  5. Add a framework architecture diagram
+If you use this code, please cite the PDNet paper (see [PDNet](https://github.com/mscmalekbaba/PDNet)).
 
 ## Acknowledgements
 
-- [facebookresearch/SlowFast](https://github.com/facebookresearch/SlowFast)
-- [fpv-iplab/MECCANO](https://github.com/fpv-iplab/MECCANO)
+[facebookresearch/SlowFast](https://github.com/facebookresearch/SlowFast), [fpv-iplab/MECCANO](https://github.com/fpv-iplab/MECCANO), [Torch-Pruning](https://github.com/VainF/Torch-Pruning).
 
-## 📜 License
+## License
 
-This project is licensed under the MIT License.
-
----
-
+MIT
