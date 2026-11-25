@@ -17,7 +17,7 @@ Isomorphic structured pruning (L1 criterion, 25% of channels) shrinks X3D-M from
 
 *Size = number of parameters x 4 bytes (fp32 weights): 3.09M parameters for X3D-M, 1.80M after pruning. Checkpoint files on disk can be larger because they store more than the weights.*
 
-**CPU inference** on a 2-minute test video (Intel i5-1035G1, no GPU): SlowFast 75 s, X3D-M 44.8 s, pruned + KD 36.2 s, about 3x faster than real time.
+**CPU inference** on a 2-minute test video (Intel i5-1035G1, no GPU): SlowFast 75 s, X3D-M 44.8 s, pruned + KD 36.2 s.
 
 **Limitations.** Each setting was trained once (no seeds or confidence intervals). MECCANO is long-tailed: mean per-class accuracy is 12.01% for X3D-M and 10.95% for pruned + KD, so most of the Top-1 accuracy comes from a few frequent classes.
 
